@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.netops.netmon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOURNAME/dev/netops-toolkit/.venv/bin/python</string>
+    <string>-m</string><string>netops.netmon</string>
+    <string>--foreground</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/YOURNAME/dev/netops-toolkit</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/Users/YOURNAME/dev/netops-toolkit/logs/netmon.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/YOURNAME/dev/netops-toolkit/logs/netmon.err.log</string>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>

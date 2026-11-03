@@ -1,0 +1,44 @@
+app:
+  data_dir: ./data
+  log_level: INFO
+
+monitor:
+  default_interval_s: 30
+  max_concurrency: 50
+  fail_threshold: 3
+  recover_threshold: 2
+  repeat_interval_min: 30
+  flap_window_s: 60
+
+  min_interval_by_probe:      # 防止把设备打高
+    icmp: 5
+    tcp: 10
+    http: 30
+    snmp: 60
+    h3c_ap: 120
+
+notify_channels:
+  - id: pushplus_main
+    channel_id: pushplus
+    enabled: false
+    config:
+      token_ref: "keyring:netops/pushplus"   # 只存引用，不存明文
+      channel: wechat
+      template: html
+      timeout_s: 10
+      max_retries: 5
+
+notify_policies:
+  - name: 核心设备
+    match: { tags: [core] }
+    routes:
+      - { severity: critical, channels: [pushplus_main], repeat_min: 15 }
+      - { severity: recovery, channels: [pushplus_main], repeat_min: 0 }
+    quiet_hours: []
+  - name: 普通接入
+    match: { tags: [access] }
+    routes:
+      - { severity: critical, channels: [pushplus_main], repeat_min: 60 }
+    quiet_hours: ["23:00-07:00"]
+
+maintenance_windows: []
