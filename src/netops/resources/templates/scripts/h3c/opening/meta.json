@@ -1,0 +1,1 @@
+{"id":"h3c.opening","title":"H3C Comware 开局配置","vendor":"H3C","category":"开局配置","description":"生成基础管理、VLAN 与 SSH 开局脚本。","template":"template.j2","filename":"h3c-opening.cfg"}

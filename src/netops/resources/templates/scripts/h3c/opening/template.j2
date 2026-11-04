@@ -1,0 +1,14 @@
+#
+# H3C Comware V7 开局配置
+#
+sysname {{ hostname }}
+#
+ssh server enable
+stelnet server enable
+#
+vlan {{ vlans }}
+#
+interface Vlan-interface1
+ ip address {{ management_ip }}
+#
+save force

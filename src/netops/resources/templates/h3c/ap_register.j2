@@ -1,0 +1,25 @@
+#
+# H3C AP 注册配置（AC 侧）
+# 生成时间：{{ generated_at }}
+#
+{% for ap in aps %}
+wlan ap {{ ap.name }} model {{ ap.model }}
+ serial-id {{ ap.serial }}
+{% if ap.service_templates %}
+{% for template in ap.service_templates %}
+ radio {{ loop.index }}
+  radio enable
+  service-template {{ template }}
+{% endfor %}
+{% endif %}
+#
+{% endfor %}
+{% if groups %}
+{% for group in groups %}
+wlan ap-group {{ group.name }}
+{% for ap_name in group.ap_names %}
+ ap {{ ap_name }}
+{% endfor %}
+#
+{% endfor %}
+{% endif %}

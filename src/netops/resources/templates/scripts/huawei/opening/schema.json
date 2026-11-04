@@ -1,0 +1,1 @@
+{"type":"object","required":["hostname","vlans"],"properties":{"hostname":{"type":"string","title":"设备名称","minLength":1,"maxLength":32,"pattern":"^[A-Za-z][A-Za-z0-9_-]*$","default":"CORE-SW-01"},"vlans":{"type":"string","title":"VLAN 列表","minLength":1,"default":"10 20 30"},"management_ip":{"type":"string","title":"管理地址","default":"192.168.1.2 255.255.255.0"}}}

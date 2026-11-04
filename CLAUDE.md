@@ -67,9 +67,10 @@ python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,macos]"
 ruff check --fix . && ruff format . && pytest -q
 python -m netops                # GUI
-python -m netops.netmon         # 监控引擎（前台）
-python -m netops.netmon --once  # 跑一轮即退（测试用）
+python -m netops.netmon         # 监控引擎（前台，P1 才有）
 ```
+
+本机 pyenv 里 3.11 需要显式指定：`PYENV_VERSION=3.11.9 python -m venv .venv`。
 
 ## 7. 目录
 
@@ -80,12 +81,27 @@ src/netops/
 ├── probes/      icmp.py, tcp.py, http.py, snmp.py, h3c_ap.py
 ├── notifiers/   pushplus.py, bark.py, webhook.py, smtp.py
 ├── netmon/      __main__.py（监控进程入口）
-├── tools/       各业务工具（P2/P3）
-├── ui/          main_window.py, tabs/, widgets/
+├── tools/       base.py（PlaceholderTool）+ 按分组一个模块：
+│                diagnostics / calculators / converters / monitor / h3c / settings
+├── ui/          main_window.py, sidebar.py, theme.py, icons.py,
+│                pages/placeholder_page.py, widgets/common.py,
+│                resources/styles/light.qss
 ├── platform_/   os_layer.py  ← 唯一允许写平台分支的地方
 └── utils/       logging_setup.py, validators.py, exporter.py
 ```
 
 ## 8. 当前阶段
 
-P0 地基 + P1 监控最小闭环。P2 之后的业务工具不要在未要求时实现，只保留契约占位。
+P0 可视化外壳已完成：三契约、19 个功能插件（注册表自动发现）、数据驱动导航、
+高保真占位页、浅色 QSS 主题、`tests/test_smoke.py`。
+
+P0 的硬性约束：
+
+- 占位页只消费契约字段（title/subtitle/stage/features/roadmap/spec/preview_*）
+- 插件注册用 `@register_tool` 或 `@register_tool()`，由 `REGISTRY.discover("netops.tools")` 自动 import
+- `DefaultPlugin.create_widget` 是 classmethod（注册的是类，不是实例）
+- QSS 里等宽字体用 `@MONO_FONT@` 占位，由 `ui/theme.py` 运行期替换成本机存在的字体，
+  否则 Qt 会打印 "missing font family" 警告，冒烟测试会因此失败
+- 冒烟测试在 offscreen 后端跑，任何 Qt 警告都会让 `test_main_window_loads_all_pages_without_qt_warnings` 失败
+
+下一步是 P1 监控最小闭环；P2 之后的业务工具不要在未要求时实现，只保留契约占位。

@@ -26,20 +26,26 @@ class ProbeResult:
     detail: str = ""
     metrics: dict = field(default_factory=dict)
 
+
 class Probe(Protocol):
-    type_id: str            # "icmp" / "tcp" / "http" / "snmp" / "h3c_ap"
-    config_schema: dict     # UI 自动生成表单
+    type_id: str  # "icmp" / "tcp" / "http" / "snmp" / "h3c_ap"
+    config_schema: dict  # UI 自动生成表单
+
     async def check(self, target: Target, cfg: dict) -> ProbeResult: ...
 
+
 class Notifier(Protocol):
-    channel_id: str         # "pushplus" / "bark" / "webhook" / "smtp"
+    channel_id: str  # "pushplus" / "bark" / "webhook" / "smtp"
+
     async def send(self, msg: NotifyMessage, cfg: dict) -> SendResult: ...
+
 
 class ToolPlugin(Protocol):
     tool_id: str
     title: str
     group: str
     order: int
+
     def create_widget(self, ctx: AppContext) -> QWidget: ...
 ```
 
