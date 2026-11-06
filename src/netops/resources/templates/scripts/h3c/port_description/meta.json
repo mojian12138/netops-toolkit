@@ -1,1 +1,0 @@
-{"id":"h3c.port_description","title":"H3C 批量端口描述","vendor":"H3C","category":"常用脚本","description":"按端口范围批量生成接口描述。","template":"template.j2","filename":"h3c-port-description.cfg"}

@@ -278,6 +278,7 @@ class TracerouteSession:
         max_hops: int = DEFAULT_HOPS,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         process_timeout_s: float = 60.0,
+        probe: str = "udp",
         runner: Callable[..., TracerouteResult] = run_traceroute,
         should_cancel: Callable[[], bool] | None = None,
         clock: Callable[[], float] = time.monotonic,
@@ -287,6 +288,7 @@ class TracerouteSession:
         self.max_hops = resolve_max_hops(max_hops)
         self.timeout_s = resolve_timeout(timeout_s)
         self._process_timeout = process_timeout_s
+        self.probe = probe
         self._runner = runner
         self._should_cancel = should_cancel or (lambda: False)
         self._clock = clock
@@ -307,10 +309,13 @@ class TracerouteSession:
                 result = self._runner(
                     self.target,
                     max_hops=self.max_hops,
+                    timeout_s=self.timeout_s,
                     process_timeout_s=self._process_timeout,
+                    probe=self.probe,
                 )
             except CommandError as exc:
-                raise TracerouteError(str(exc)) from exc
+                detail = f"\n命令输出：{exc.output.strip()[-1000:]}" if exc.output.strip() else ""
+                raise TracerouteError(f"{exc}{detail}") from exc
             hops = _fold(result.hops)
             resolved = result.target or self.target
             reached = result.reached

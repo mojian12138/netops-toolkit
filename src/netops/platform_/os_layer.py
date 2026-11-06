@@ -101,6 +101,10 @@ def display_font_family() -> str:
 class CommandError(RuntimeError):
     """系统命令不可用或超时。消息面向用户，可直接展示。"""
 
+    def __init__(self, message: str, *, output: str = "") -> None:
+        super().__init__(message)
+        self.output = output
+
 
 @dataclass(frozen=True, slots=True)
 class PingReply:
@@ -164,7 +168,16 @@ def _run(argv: list[str], timeout_s: float) -> tuple[int, str]:
     except FileNotFoundError as exc:
         raise CommandError(f"系统命令不存在：{argv[0]}") from exc
     except subprocess.TimeoutExpired as exc:
-        raise CommandError(f"命令执行超时（{timeout_s:.1f}s）：{' '.join(argv)}") from exc
+        partial = exc.stdout or b""
+        partial_err = exc.stderr or b""
+        output = "\n".join(
+            part.decode(errors="replace") if isinstance(part, bytes) else part
+            for part in (partial, partial_err)
+            if part
+        )
+        raise CommandError(
+            f"命令执行超时（{timeout_s:.1f}s）：{' '.join(argv)}", output=output
+        ) from exc
     output = (completed.stdout or "") + (completed.stderr or "")
     return completed.returncode, output
 
@@ -327,25 +340,45 @@ def parse_traceroute_output(target: str, output: str) -> TracerouteResult:
     return TracerouteResult(target=target, hops=tuple(hops), reached=reached, raw=output)
 
 
-def _traceroute_argv(target: str, max_hops: int) -> list[str]:
+def _traceroute_argv(target: str, max_hops: int, timeout_s: float, probe: str = "udp") -> list[str]:
+    if probe not in {"udp", "icmp"}:
+        raise CommandError("探测协议仅支持 UDP 或 ICMP")
     if is_windows():
-        return ["tracert", "-d", "-h", str(max_hops), "-w", "1000", target]
-    return [TRACEROUTE_BIN, "-n", "-m", str(max_hops), "-q", "1", "-w", "2", target]
+        return ["tracert", "-d", "-h", str(max_hops), "-w", str(int(timeout_s * 1000)), target]
+    argv = [TRACEROUTE_BIN, "-n", "-m", str(max_hops), "-q", "1", "-w", f"{timeout_s:g}"]
+    if probe == "icmp":
+        argv.append("-I")
+    return [*argv, target]
 
 
 def run_traceroute(
     target: str,
     *,
     max_hops: int = DEFAULT_TRACEROUTE_MAX_HOPS,
+    timeout_s: float = 2.0,
     process_timeout_s: float = 60.0,
+    probe: str = "udp",
 ) -> TracerouteResult:
     if not target.strip():
         raise CommandError("目标地址不能为空")
     if not 1 <= max_hops <= MAX_TRACEROUTE_HOPS:
         raise CommandError(f"最大跳数必须在 1-{MAX_TRACEROUTE_HOPS} 之间")
-    argv = _traceroute_argv(target.strip(), max_hops)
-    _, output = _run(argv, process_timeout_s)
-    return parse_traceroute_output(target.strip(), output)
+    if not 0.1 <= timeout_s <= 5.0:
+        raise CommandError("单跳等待时间必须在 0.1-5 秒之间")
+    argv = _traceroute_argv(target.strip(), max_hops, timeout_s, probe)
+    returncode, output = _run(argv, process_timeout_s)
+    if returncode != 0 and not output.strip():
+        raise CommandError(f"traceroute 退出码为 {returncode}，没有返回诊断信息")
+    result = parse_traceroute_output(target.strip(), output)
+    if not result.hops:
+        detail = output.strip()[-1000:] or "命令没有输出"
+        raise CommandError(f"traceroute 未返回可识别的跳信息：{detail}", output=output)
+    if returncode != 0:
+        raise CommandError(
+            f"traceroute 退出码为 {returncode}；请检查目标地址、权限或系统命令输出",
+            output=output,
+        )
+    return result
 
 
 _ARP_MACOS = re.compile(

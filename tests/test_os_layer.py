@@ -113,6 +113,11 @@ def test_ping_argv_shape() -> None:
 
 
 def test_traceroute_argv_shape() -> None:
-    argv = _traceroute_argv("1.1.1.1", 20)
+    argv = _traceroute_argv("1.1.1.1", 20, 2.0)
     assert argv[-1] == "1.1.1.1"
-    assert "20" in argv
+    if is_macos():
+        assert "20" in argv
+        assert argv[argv.index("-w") + 1] == "2"
+        icmp_argv = _traceroute_argv("1.1.1.1", 20, 3.0, "icmp")
+        assert "-I" in icmp_argv
+        assert icmp_argv[icmp_argv.index("-w") + 1] == "3"

@@ -16,6 +16,7 @@ from netops.services.h3c_ap import (
     parse_csv,
     parse_service_templates,
     render_config,
+    serial_warning,
 )
 
 _STAMP = datetime(2026, 11, 4, 19, 30, 0)
@@ -83,7 +84,10 @@ def test_parse_ap_rejects_bad_name() -> None:
         _ap(name="a" * 64)
 
 
-def test_parse_ap_rejects_bad_serial_and_model() -> None:
+def test_serial_length_is_advisory() -> None:
+    assert "20 位" in serial_warning("210235A1B2C3D4E5F6")
+    assert serial_warning("210235A1B2C3D4E5F6AB") == ""
+
     with pytest.raises(ApError, match="序列号不能为空"):
         _ap(serial="  ")
     with pytest.raises(ApError, match="序列号不合法"):
@@ -169,8 +173,9 @@ def test_render_ap_with_service_templates() -> None:
     text = render_config(batch)
     assert " radio 1" in text
     assert "  service-template 10" in text
-    assert " radio 2" in text
     assert "  service-template 11" in text
+    assert text.count(" radio 1") == 1
+    assert " radio 2" not in text
 
 
 def test_render_ap_without_service_templates_has_no_radio_lines() -> None:

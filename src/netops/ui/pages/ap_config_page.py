@@ -115,6 +115,9 @@ class ApConfigPage(ToolPage):
 
         self.single_error = InlineError()
         self.single_card.body.addWidget(self.single_error)
+        self.serial_hint = label("", "FieldHint")
+        self.serial_hint.setWordWrap(True)
+        self.single_card.body.addWidget(self.serial_hint)
         self.add_card(self.single_card)
 
         # 监听输入变动
@@ -234,6 +237,7 @@ class ApConfigPage(ToolPage):
         name = self.name_input.text().strip()
         serial = self.serial_input.text().strip()
         model = self.model_input.text().strip()
+        self.serial_hint.setText(ap_service.serial_warning(serial))
 
         # 三个必填字段任一为空时清空预览，不报错
         if not (name and serial and model):
@@ -257,6 +261,7 @@ class ApConfigPage(ToolPage):
             return
 
         self.single_error.clear_error()
+        self.serial_hint.setText(ap_service.serial_warning(serial))
         self._update_preview(config, batch)
 
     # -- 批量生成 -----------------------------------------------------------

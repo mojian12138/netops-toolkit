@@ -125,7 +125,9 @@ def test_session_passes_parameters_to_runner() -> None:
     target, kwargs = runner.calls[0]
     assert target == "8.8.8.8"
     assert kwargs["max_hops"] == 12
+    assert kwargs["timeout_s"] == pytest.approx(3.0)
     assert kwargs["process_timeout_s"] == 45.0
+    assert kwargs["probe"] == "udp"
 
 
 def test_report_fields_and_reached() -> None:

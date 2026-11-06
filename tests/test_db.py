@@ -16,8 +16,8 @@ def db(tmp_path) -> Database:
 
 def test_fresh_database_applies_all_migrations(db: Database) -> None:
     db.connect()
-    assert db.current_version() == 1
-    assert db.applied_versions() == [1]
+    assert db.current_version() == 2
+    assert db.applied_versions() == [1, 2]
 
 
 def test_migrate_is_idempotent(tmp_path) -> None:
@@ -28,7 +28,7 @@ def test_migrate_is_idempotent(tmp_path) -> None:
     first.close()
     second = Database(path)
     assert second.migrate() == []
-    assert second.current_version() == 1
+    assert second.current_version() == 2
     second.close()
 
 
@@ -90,7 +90,16 @@ def test_favorite_crud_and_search(db: Database) -> None:
     assert db.list_favorites() == []
 
 
-def test_favorite_rejects_blank(db: Database) -> None:
+def test_preset_does_not_store_sensitive_values(db: Database) -> None:
+    preset = db.add_preset(
+        "核心交换机",
+        "h3c.comware_v7",
+        {"hostname": "CORE", "password": "secret", "mgmt_ip": "10.0.0.2/24"},
+        ("password", "mgmt_ip"),
+    )
+    assert preset.values == {"hostname": "CORE"}
+    assert "secret" not in db.conn.execute("SELECT values_json FROM script_presets").fetchone()[0]
+
     with pytest.raises(ValueError):
         db.add_favorite("", "content")
     with pytest.raises(ValueError):

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import time
@@ -51,6 +52,17 @@ class ScriptFavorite:
     category: str
     content: str
     tags: str
+    created_at: float
+    updated_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class ScriptPreset:
+    id: int
+    name: str
+    template_id: str
+    values: dict[str, object]
+    sensitive_fields: tuple[str, ...]
     created_at: float
     updated_at: float
 
@@ -273,8 +285,68 @@ class Database:
             cursor = conn.execute("DELETE FROM script_favorites WHERE id=?", (favorite_id,))
         return cursor.rowcount > 0
 
+    def add_preset(
+        self,
+        name: str,
+        template_id: str,
+        values: dict[str, object],
+        sensitive_fields: tuple[str, ...] = (),
+    ) -> ScriptPreset:
+        if not name.strip():
+            raise ValueError("预设名称不能为空")
+        safe_values = {key: value for key, value in values.items() if key not in sensitive_fields}
+        now = time.time()
+        with self.transaction() as conn:
+            cursor = conn.execute(
+                "INSERT INTO script_presets(name, template_id, values_json, sensitive_fields_json, created_at, updated_at) VALUES(?,?,?,?,?,?)",
+                (
+                    name.strip(),
+                    template_id,
+                    json.dumps(safe_values, ensure_ascii=False),
+                    json.dumps(list(sensitive_fields)),
+                    now,
+                    now,
+                ),
+            )
+        preset = self.get_preset(int(cursor.lastrowid))
+        assert preset is not None
+        return preset
 
-# -- 迁移文件 -----------------------------------------------------------------
+    def list_presets(self) -> list[ScriptPreset]:
+        rows = self.conn.execute("SELECT * FROM script_presets ORDER BY updated_at DESC").fetchall()
+        return [_row_to_preset(row) for row in rows]
+
+    def get_preset(self, preset_id: int) -> ScriptPreset | None:
+        row = self.conn.execute("SELECT * FROM script_presets WHERE id=?", (preset_id,)).fetchone()
+        return _row_to_preset(row) if row else None
+
+    def update_preset(
+        self,
+        preset_id: int,
+        *,
+        name: str,
+        values: dict[str, object],
+        sensitive_fields: tuple[str, ...],
+    ) -> ScriptPreset | None:
+        if not name.strip():
+            raise ValueError("预设名称不能为空")
+        safe_values = {key: value for key, value in values.items() if key not in sensitive_fields}
+        with self.transaction() as conn:
+            conn.execute(
+                "UPDATE script_presets SET name=?, values_json=?, sensitive_fields_json=?, updated_at=? WHERE id=?",
+                (
+                    name.strip(),
+                    json.dumps(safe_values, ensure_ascii=False),
+                    json.dumps(list(sensitive_fields)),
+                    time.time(),
+                    preset_id,
+                ),
+            )
+        return self.get_preset(preset_id)
+
+        with self.transaction() as conn:
+            cursor = conn.execute("DELETE FROM script_presets WHERE id=?", (preset_id,))
+        return cursor.rowcount > 0
 
 
 def _iter_migrations() -> list[tuple[int, str, str]]:
@@ -301,6 +373,18 @@ def _row_to_device(row: sqlite3.Row) -> Device:
         location=row["location"] or "",
         group_name=row["group_name"] or "",
         mac=row["mac"] or "",
+        updated_at=float(row["updated_at"]),
+    )
+
+
+def _row_to_preset(row: sqlite3.Row) -> ScriptPreset:
+    return ScriptPreset(
+        id=int(row["id"]),
+        name=row["name"],
+        template_id=row["template_id"],
+        values=json.loads(row["values_json"]),
+        sensitive_fields=tuple(json.loads(row["sensitive_fields_json"])),
+        created_at=float(row["created_at"]),
         updated_at=float(row["updated_at"]),
     )
 

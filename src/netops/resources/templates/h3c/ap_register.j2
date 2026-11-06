@@ -6,9 +6,9 @@
 wlan ap {{ ap.name }} model {{ ap.model }}
  serial-id {{ ap.serial }}
 {% if ap.service_templates %}
-{% for template in ap.service_templates %}
- radio {{ loop.index }}
+ radio 1
   radio enable
+{% for template in ap.service_templates %}
   service-template {{ template }}
 {% endfor %}
 {% endif %}

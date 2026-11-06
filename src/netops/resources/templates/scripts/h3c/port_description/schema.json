@@ -1,1 +1,0 @@
-{"type":"object","required":["interface_range","description"],"properties":{"interface_range":{"type":"string","title":"接口范围","minLength":1,"default":"GigabitEthernet1/0/1 to GigabitEthernet1/0/24"},"description":{"type":"string","title":"端口描述","minLength":1,"default":"ACCESS-PORT"}}}

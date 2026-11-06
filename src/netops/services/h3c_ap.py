@@ -167,6 +167,14 @@ def _check_serial(value: str) -> str:
     return serial
 
 
+def serial_warning(serial: str) -> str:
+    """Return a non-blocking hint for uncommon H3C serial lengths."""
+    value = serial.strip()
+    if value and len(value) != 20:
+        return "H3C AP 序列号通常为 20 位，请确认设备标签后再下发。"
+    return ""
+
+
 def _check_model(value: str) -> str:
     model = value.strip()
     if not model:

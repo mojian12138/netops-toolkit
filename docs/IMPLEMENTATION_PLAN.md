@@ -1,7 +1,7 @@
 # 具体功能开发计划（P2 工具箱 / P3 H3C 专属）
 
 > 本文件是**唯一进度台账**。每完成一个步骤，必须回写：状态、验证命令与结果、遗留问题、下一步。
-> 最后更新：2026-11-04 · 当前阶段：**I 阶段完成（A、B1–B6、C1–C2、D1–D3、E1–E3、F1–F3、G1–G3、H1–H3、I1–I5 完成），下一步阶段 J（H3C 维保查询）**
+> 最后更新：2026-11-05 · 当前阶段：**I 阶段优化完成，下一步阶段 J（H3C 维保查询）**
 
 ---
 
@@ -234,7 +234,43 @@ src/netops/
 
 ## 5. 进度日志
 
-### 2026-11-04 · I1 + I2 + I3 + I4 + I5 完成（脚本生成器 + 收藏/载入）
+### 2026-11-06 · 聚合上行配置顺序与默认 Trunk
+
+- 变更：移除 SSH 默认生成的 `stelnet server enable`；单端口和聚合上行统一生成 `port link-type trunk` 与 `port trunk permit vlan all`。
+- 聚合顺序：先创建 `Bridge-Aggregation` 并设置聚合模式，再加入成员接口，最后重新进入聚合接口配置 Trunk。
+- 验证：脚本服务/UI 聚焦测试 **14 passed**；Ruff 与 `git diff --check` 通过。
+- 备注：未纳入用户本地未跟踪文件 `ping-result.csv`。
+
+
+- 变更：代码预览容器、预览标题、代码编辑器、工具提示统一改为浅色背景；补充 `QPlainTextEdit#ToolInputMono` 的白底、深色文字、浅色选中态和聚焦边框，避免继承系统暗色调色板。
+- 验证：QSS 变更已完成；UI 冒烟与脚本页面测试通过；全量测试 **478 passed in 113.39s**。
+- 遗留：仍需完成正常/窄窗口截图检查。
+
+
+- 变更：hostname 默认 `H3Csw01`；服务选择改为网格布局；VTY 改为 1–63 数字控件；上行/业务模式使用不可编辑选择框；模块开关即时影响字段显隐和配置输出；左侧最小宽度与字段布局加宽。
+- 新增：全局“强制生成（标记错误）”按钮；严格模式阻止错误输出，强制模式保留输入并在配置头部加入 `# !! INVALID` 标记。
+- 验证：Ruff 通过；脚本服务/UI 聚焦测试 **14 passed**；全量测试 **478 passed in 99.39s**。
+- 遗留：仍需在真实 GUI 窗口检查控件宽度和在 Comware V7 设备上粘贴验证命令语法。
+
+
+- 变更：移除脱敏复制入口，密码改为明文显示；默认 VLAN 1、管理 IP `1.1.1.1/24`、网关 `1.1.1.254`、密码 `h3cadmin`；新增重置默认值和配置说明显示开关。
+- 修复：VTY 生成改为 Comware V7 `user-interface vty`；管理地址支持 CIDR/点分掩码严格校验；实现端口范围快捷语法解析、单端口/聚合、Access/Trunk 业务端口配置；输出按配置视图正确使用 `quit` 并分段排版。
+- UI：顶部动作拆成重置/复制/导出与预设/收藏两行，扩大预览比例，收藏仍可展开使用。
+- 验证：Ruff 检查/格式化通过；脚本服务/UI 聚焦测试 14 passed；全量测试 **478 passed in 78.65s**。
+- 遗留：需要以 H3C 官方 Comware V7 设备/文档校验所有密码控制和 HTTP/HTTPS 服务命令，建议在模拟器或测试设备实际粘贴验证；需人工看 GUI 截图确认窗口宽度下控件无截断。
+
+
+- 变更：脚本页收敛为 H3C Comware V7 开局；删除 Huawei/V5/常用脚本资源入口；新增左右分栏、独立滚动、折叠参数区、Qt 原生语法高亮、语义化 QCheckBox/QComboBox/QSpinBox/QLineEdit 控件；补齐 SSH/Telnet/Terminal/HTTP/HTTPS、管理网络、上行单口/聚合、业务 Access/Trunk 与 NTP 配置块。
+- 预设：新增 `002_script_presets.sql` 与结构化预设 CRUD；密码不落 SQLite，管理 IP/网关/密码在预设摘要和脱敏复制中掩码；保留旧 `script_favorites` 原始代码载入兼容。
+- 验证：Ruff check/format ✅；脚本、页面、DB 聚焦测试 **18 passed**；全量测试正在执行。
+- 遗留：预设对话框目前采用 Qt 输入选择对话框，后续可升级为完整分组编辑对话框；需人工检查正常窗口尺寸下的视觉间距和折叠交互。
+
+
+- 变更：Traceroute 将页面单跳等待传入系统命令，macOS 支持 UDP/ICMP 探测参数，保留超时部分输出并报告非零退出/不可解析输出；H3C AP 多个服务模板统一绑定 `radio 1`，序列号非 20 位改为非阻断提醒；新增 H3C Comware V5/V7 模块化开局模板和脱敏复制。
+- 验证：Traceroute/AP/脚本聚焦测试通过；全量测试已运行，结果待最终收集；Ruff check 与 format 已执行。
+- 遗留：脚本生成器仍需进一步完成手风琴分组、语法高亮和预设数据库迁移；真实网络 Traceroute 与官方设备命令需手动验收。
+- 下一步：补齐脚本参数类型控件、预设持久化和 split-pane 视觉验收，再进入阶段 J。
+
 
 - 变更：新增 `src/netops/services/scripts.py`（模板资源发现、schema 校验、默认值、Jinja2 渲染）、`src/netops/ui/pages/script_page.py`（厂商/分类/模板选择、参数表单、预览编辑、复制/导出、收藏库）、脚本模板资源 `src/netops/resources/templates/scripts/{h3c,huawei}/`、`tests/test_scripts_service.py` 与 `tests/test_script_page.py`。
 - 修改：`src/netops/tools/h3c.py` 将 `h3c.scripts` 更新为 P3 已实现并接入真实页面；`tests/test_smoke.py` 将其加入真实页面断言并移出代码预览占位集合。

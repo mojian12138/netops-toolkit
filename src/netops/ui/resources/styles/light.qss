@@ -293,20 +293,20 @@ QToolButton#CollapseButton:hover {
 /* ───────────────── 代码预览 ───────────────── */
 
 #CodeBlock {
-    background-color: #0b1220;
-    border: 1px solid #1e293b;
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
     border-radius: 10px;
 }
 
 #CodeBlockHeader {
-    background-color: #0f172a;
+    background-color: #f8fafc;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
-    border-bottom: 1px solid #1e293b;
+    border-bottom: 1px solid #e2e8f0;
 }
 
 #CodeBlockTitle {
-    color: #94a3b8;
+    color: #475569;
     font-size: 11px;
     font-weight: 600;
 }
@@ -317,16 +317,17 @@ QToolButton#CollapseButton:hover {
 }
 
 #CodeBlock QPlainTextEdit {
-    background-color: #0b1220;
+    background-color: #ffffff;
     border: none;
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
-    color: #e2e8f0;
+    color: #0f172a;
     font-family: "@MONO_FONT@";
     font-size: 12px;
     line-height: 150%;
     padding: 10px 12px;
-    selection-background-color: #1e3a5f;
+    selection-background-color: #ccfbf1;
+    selection-color: #0f172a;
 }
 
 /* ───────────────── 真实工具页 ───────────────── */
@@ -353,6 +354,88 @@ QToolButton#CollapseButton:hover {
     font-size: 11px;
 }
 
+QSplitter#ScriptSplitter {
+    background-color: #f8fafc;
+}
+
+QSplitter#ScriptSplitter::handle {
+    background-color: #e2e8f0;
+    width: 8px;
+}
+#ScriptFormPane,
+#ScriptFormContent,
+#ScriptFormScroll,
+#ScriptFormViewport,
+#ScriptFormScroll > QWidget,
+#ScriptFormScroll > QWidget > QWidget {
+    background-color: #f8fafc;
+    color: #0f172a;
+    border: none;
+}
+
+QAbstractScrollArea#ScriptFormScroll::viewport {
+    background-color: #f8fafc;
+}
+
+QCheckBox#ToolCheck {
+    background-color: #ffffff;
+    color: #334155;
+    spacing: 8px;
+    padding: 3px 0;
+}
+
+QCheckBox#ToolCheck::indicator {
+    width: 16px;
+    height: 16px;
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+}
+
+QCheckBox#ToolCheck::indicator:hover {
+    border-color: #14b8a6;
+}
+
+QCheckBox#ToolCheck::indicator:checked {
+    background-color: #0f766e;
+    border-color: #0f766e;
+}
+
+QCheckBox#ToolCheck:disabled {
+    background-color: #f8fafc;
+    color: #94a3b8;
+}
+
+QCheckBox#ToolCheck:disabled::indicator {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+}
+
+QToolButton#SectionToggle {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 10px;
+    text-align: left;
+}
+
+QToolButton#SectionToggle:hover,
+QToolButton#SectionToggle:checked {
+    background-color: #eefbf9;
+    border-color: #99f6e4;
+    color: #0f766e;
+}
+
+#SectionBody {
+    background-color: #ffffff;
+    border: 1px solid #eef2f7;
+    border-top: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
 QLineEdit#ToolInput,
 QLineEdit#ToolInputMono,
 QSpinBox#ToolInput,
@@ -392,6 +475,14 @@ QComboBox#ToolInput:disabled {
 QComboBox#ToolInput::drop-down {
     border: none;
     width: 18px;
+}
+
+QComboBox#ToolInput QAbstractItemView {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    color: #0f172a;
+    selection-background-color: #e6f4f2;
+    selection-color: #0f172a;
 }
 
 /* 数字输入框的上下步进按钮：给右侧留 18px，否则箭头会压住数字。 */
@@ -481,6 +572,26 @@ QPlainTextEdit#ToolInput {
     padding: 8px 10px;
     selection-background-color: #ccfbf1;
     selection-color: #0f172a;
+}
+
+QPlainTextEdit#ToolInput:focus {
+    border: 1px solid #14b8a6;
+}
+
+QPlainTextEdit#ToolInputMono {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #0f172a;
+    font-family: "@MONO_FONT@";
+    font-size: 12px;
+    padding: 10px 12px;
+    selection-background-color: #ccfbf1;
+    selection-color: #0f172a;
+}
+
+QPlainTextEdit#ToolInputMono:focus {
+    border: 1px solid #14b8a6;
 }
 
 QPlainTextEdit#ToolInput:focus {
@@ -696,10 +807,10 @@ QScrollBar::sub-page {
 /* ───────────────── 工具提示 ───────────────── */
 
 QToolTip {
-    background-color: #0f172a;
-    border: none;
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
     border-radius: 6px;
-    color: #f8fafc;
+    color: #0f172a;
     font-size: 11px;
     padding: 5px 8px;
 }

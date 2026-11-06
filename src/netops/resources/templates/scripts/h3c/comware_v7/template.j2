@@ -1,0 +1,72 @@
+# ==============================
+# H3C Comware V7 Baseline Config
+# ==============================
+sys
+{% if show_comments %}# 基础与系统命名
+{% endif %}sysname {{ hostname }}
+{% if password_policy %}{% if show_comments %}# 弱密码控制与安全策略
+{% endif %}undo password-control change-password first-login enable
+undo password-control aging enable
+undo password-control composition enable
+undo password-control update-interval
+undo password-control length enable
+undo password-control complexity user-name check
+undo password-control complexity same-character check
+undo password-control history enable
+{% endif %}{% if show_comments %}# 管理员与远程访问
+{% endif %}local-user {{ username }}
+ password simple {{ password }}
+ service-type {{ service_types | join(' ') }}
+ authorization-attribute user-role network-admin
+quit
+{% if 'telnet' in service_types %}telnet server enable
+{% endif %}{% if 'ssh' in service_types %}ssh server enable
+{% endif %}{% if 'http' in service_types %}ip http enable
+{% endif %}{% if 'https' in service_types %}ip https enable
+{% endif %}user-interface vty 0 {{ vty_max }}
+ authentication-mode scheme
+ user-role network-admin
+quit
+{% if show_comments %}# 管理网络
+{% endif %}vlan {{ mgmt_vlan }}
+{% if mgmt_vlan_desc %} description {{ mgmt_vlan_desc }}
+{% endif %}quit
+interface Vlan-interface{{ mgmt_vlan }}
+ ip address {{ mgmt_ip.replace('/', ' ') }}
+quit
+{% if gateway %}ip route-static 0.0.0.0 0 {{ gateway }}
+{% endif %}{% if uplink_enabled %}{% if show_comments %}# 上行口与链路聚合
+{% endif %}{% if uplink_mode == 'single' %}interface {{ uplink_interface }}
+ description UPLINK
+ port link-type trunk
+ port trunk permit vlan all
+quit
+{% else %}interface Bridge-Aggregation{{ aggregation_id }}
+ description UPLINK-LAG
+ link-aggregation mode {{ aggregation_mode }}
+quit
+{% for member in aggregation_members_render.split(', ') %}interface {{ member }}
+ port link-aggregation group {{ aggregation_id }}
+quit
+{% endfor %}interface Bridge-Aggregation{{ aggregation_id }}
+ port link-type trunk
+ port trunk permit vlan all
+quit
+{% endif %}{% endif %}{% if business_enabled %}{% if show_comments %}# 业务端口批量规划
+{% endif %}interface range {{ business_range }}
+{% if business_mode == 'access' %} port link-type access
+ port access vlan {{ business_vlan }}
+{% else %} port link-type trunk
+ port trunk pvid vlan {{ business_pvid }}
+ port trunk permit vlan {{ business_permit_vlans_render }}
+{% endif %}{% if business_edge %} stp edged-port
+{% endif %}{% if business_dhcp_trust %} dhcp snooping trust
+{% endif %}quit
+{% endif %}{% if ntp_enabled %}{% if show_comments %}# 时间与 NTP
+{% endif %}clock timezone beijing add 08:00:00
+clock protocol ntp
+ntp-service enable
+ntp-service unicast-server {{ ntp_server }}
+{% endif %}
+return
+save force

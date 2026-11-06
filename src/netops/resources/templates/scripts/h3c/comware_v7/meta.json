@@ -1,0 +1,1 @@
+{"id":"h3c.comware_v7","title":"H3C Comware V7 基线开局","vendor":"H3C","category":"开局配置","description":"模块化生成 Comware V7 基础、安全、管理网络与 NTP 配置。","template":"template.j2","filename":"h3c-comware-v7.cfg"}

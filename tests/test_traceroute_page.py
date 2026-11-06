@@ -136,6 +136,8 @@ def test_trace_passes_parameters(page: TraceroutePage) -> None:
     target, kwargs = runner.calls[0]
     assert target == "8.8.8.8"
     assert kwargs["max_hops"] == 12
+    assert kwargs["timeout_s"] == pytest.approx(2.0)
+    assert kwargs["probe"] == "udp"
 
 
 def test_command_error_shows_inline(page: TraceroutePage) -> None:

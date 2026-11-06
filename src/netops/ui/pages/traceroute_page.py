@@ -223,8 +223,8 @@ class TraceroutePage(ToolPage):
             self.target_input.text(),
             max_hops=hops,
             timeout_s=timeout,
-            # 每跳最多等 timeout 秒，跳数用满也算一次上限
-            process_timeout_s=max(_PROCESS_TIMEOUT_BASE_S, hops * timeout * 3),
+            # Reserve enough time for all hop probes plus command startup/cleanup.
+            process_timeout_s=max(_PROCESS_TIMEOUT_BASE_S, hops * timeout * 1.5),
             runner=self.runner_factory,
             should_cancel=self._should_cancel,
         )

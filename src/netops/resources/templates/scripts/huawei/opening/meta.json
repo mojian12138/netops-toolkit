@@ -1,1 +1,0 @@
-{"id":"huawei.opening","title":"Huawei VRP 开局配置","vendor":"Huawei","category":"开局配置","description":"生成基础系统、VLAN 与 SSH 开局脚本。","template":"template.j2","filename":"huawei-opening.cfg"}

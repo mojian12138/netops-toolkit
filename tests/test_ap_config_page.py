@@ -68,7 +68,7 @@ def test_single_ap_generates_config(page: ApConfigPage) -> None:
     assert "serial-id 210235A1B2C3D4E5F6" in code
     assert "radio 1" in code
     assert "service-template 10" in code
-    assert "radio 2" in code
+    assert "radio 2" not in code
     assert "service-template 11" in code
     assert "wlan ap-group office-3f" in code
     assert "ap office-3f-01" in code
@@ -76,11 +76,16 @@ def test_single_ap_generates_config(page: ApConfigPage) -> None:
     assert page.copy_all_btn.isEnabled() is True
     assert page.copy_group_btn.isEnabled() is True
     assert page.export_cfg_btn.isEnabled() is True
+    assert "20 位" in page.serial_hint.text()
     assert "共 1 台 AP" in page.summary_text()
     assert "1 个 AP 组" in page.summary_text()
 
 
-def test_single_ap_without_group_disables_group_copy(page: ApConfigPage) -> None:
+def test_single_ap_advises_unusual_serial_length(page: ApConfigPage) -> None:
+    page.set_single(name="office-3f-01", serial="210235A1B2C3D4E5F6", model="WA6320")
+    assert page.generated_code()
+    assert "20 位" in page.serial_hint.text()
+
     page.set_single(
         name="office-3f-01",
         serial="210235A1B2C3D4E5F6",
