@@ -51,6 +51,12 @@ class HopTimeline(QWidget):
         self.setMinimumHeight(self._content_height())
         self.update()
 
+    def append_hop(self, hop) -> None:
+        """流式追加一跳：每跳一到达就点亮，不重建整条时间轴。"""
+        self._hops.append(hop)
+        self.setMinimumHeight(self._content_height())
+        self.update()
+
     def clear(self) -> None:
         self._hops = []
         self.setMinimumHeight(self._content_height())

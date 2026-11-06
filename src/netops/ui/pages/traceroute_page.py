@@ -2,11 +2,11 @@
 
 三块：目标与参数 → 路径时间轴 → 逐跳明细表。
 追踪逻辑全在 ``services/traceroute.py``，备注读写在 ``services/devices.py``，
-本页只做录入、结果展示与导出；追踪是**阻塞子进程调用**，走 ``TaskRunner``，
+本页只做录入、结果展示与导出；追踪是**流式子进程调用**，走 ``TaskRunner``，
+每跳一到达就通过 ``_HopBridge`` 的 Qt 信号回主线程，时间轴逐跳点亮，
 UI 线程不阻塞。
 
-注意：``traceroute`` 没有增量输出（进程结束才有完整 stdout），所以进度条只能
-转圈，不能按跳推进。
+输出对齐 ``tracert`` 命令行：``跳号  地址  延迟``，超时跳显示 ``*``。
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -82,7 +82,12 @@ class TraceroutePage(ToolPage):
         self._book = book or DeviceBook(None)
 
         #: 测试可注入假 runner。
-        self.runner_factory: Callable[..., object] = tr_service.run_traceroute
+        self.runner_factory: Callable[..., object] = tr_service.run_traceroute_stream
+
+        #: 后台线程每跳一到达立即回调这里，桥接成 Qt 信号回主线程刷新。
+        self._bridge = _HopBridge(parent=self)
+        self._bridge.hop.connect(self._on_hop)
+        self._hop_count = 0
 
         self._ticker = QTimer(self)
         self._ticker.setInterval(250)
@@ -267,6 +272,7 @@ class TraceroutePage(ToolPage):
             # Reserve enough time for all hop probes plus command startup/cleanup.
             process_timeout_s=max(_PROCESS_TIMEOUT_BASE_S, hops * timeout * 1.5),
             runner=self.runner_factory,
+            on_hop=self._bridge.emit_hop,
             should_cancel=self._should_cancel,
         )
 
@@ -282,9 +288,10 @@ class TraceroutePage(ToolPage):
         self.clear_results()
         self._stop_requested = False
         self._report = None
+        self._hop_count = 0
         self._started = datetime.now()
         self._monotonic0 = time.monotonic()
-        self.status.setText("正在追踪…（traceroute 结束后才会返回完整路径）")
+        self.status.setText("正在追踪…（每跳到达即实时显示）")
 
         self._set_state("running")
         self._ticker.start()
@@ -305,6 +312,7 @@ class TraceroutePage(ToolPage):
 
     def clear_results(self) -> None:
         self._report = None
+        self._hop_count = 0
         self.table.setRowCount(0)
         self.timeline.clear()
         self.summary.setText("暂无结果")
@@ -330,7 +338,17 @@ class TraceroutePage(ToolPage):
             return
         self.status.setText(
             f"正在追踪 {self.target_input.text().strip() or '(空)'}…"
-            f"已运行 {time.monotonic() - self._monotonic0:.0f} 秒"
+            f"已发现 {self._hop_count} 跳 / 已运行 {time.monotonic() - self._monotonic0:.0f} 秒"
+        )
+
+    def _on_hop(self, hop: tr_service.HopInfo) -> None:
+        """后台线程每跳一到达立即触发（经 Qt 信号桥接）；时间轴和表格实时追加。"""
+        if self._state != "running":
+            return
+        self._hop_count = max(self._hop_count, hop.hop)
+        self._append_hop(hop)
+        self.status.setText(
+            f"正在追踪 {self.target_input.text().strip() or '(空)'}…已发现 {self._hop_count} 跳"
         )
 
     def _on_finished(self, report: object) -> None:
@@ -395,6 +413,24 @@ class TraceroutePage(ToolPage):
         if report.resolved != report.target:
             parts.append(f"解析为 {report.resolved}")
         self.summary.setText("，".join(parts) + "。")
+
+    def _append_hop(self, hop: tr_service.HopInfo) -> None:
+        """把一跳追加到时间轴和表格里（流式显示）；不写 summary，等结束后统一汇总。"""
+        self.timeline.append_hop(hop)
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        cells = [
+            str(hop.hop),
+            "*" if hop.timed_out else hop.address,
+            _DASH if hop.rtt_ms is None else f"{hop.rtt_ms:.1f}",
+            _DASH,
+        ]
+        for column, text in enumerate(cells):
+            item = QTableWidgetItem(text)
+            if hop.timed_out:
+                item.setForeground(QColor(_TIMEOUT_COLOR))
+                item.setToolTip("该跳没有响应（可能是防火墙丢弃了 TTL 超时报文）")
+            self.table.setItem(row, column, item)
 
     # -- 备注与复制 ---------------------------------------------------------
     def selected_hop(self) -> tr_service.HopInfo | None:
@@ -526,6 +562,15 @@ def _to_clipboard(text: str) -> None:
     clipboard = application.clipboard()
     if clipboard is not None:
         clipboard.setText(text)
+
+
+class _HopBridge(QObject):
+    """把后台线程的每跳回调转成 Qt 信号——保证 UI 改动只发生在主线程。"""
+
+    hop = pyqtSignal(object)
+
+    def emit_hop(self, hop: tr_service.HopInfo) -> None:
+        self.hop.emit(hop)
 
 
 def _process_events(timeout_ms: int) -> None:

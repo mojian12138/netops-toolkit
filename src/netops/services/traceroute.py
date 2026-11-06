@@ -3,6 +3,7 @@
 三层分工：
 
 - ``platform_/os_layer.py``：执行 ``traceroute -n`` / ``tracert -d`` 并正则解析；
+  ``run_traceroute_stream`` 逐行流式输出（每跳到达立即回调，不等进程结束）；
 - 本模块：目标校验、跳数与超时约束、逐跳备注匹配、结果聚合与导出渲染；
 - ``ui/pages/traceroute_page.py``：只负责录入、时间轴展示与信号转发。
 
@@ -13,6 +14,11 @@
 
 ``hops`` 里同一跳可能有多条记录（``-q 1`` 时一般只有一条），这里按跳号折叠，
 延迟取该跳的最小值——排障时更关心「这段路最快能多快」而不是平均值。
+
+流式模式（``run_stream``）：traceroute 是无缓冲的行式输出，``Popen.readline``
+每 2s 就能拿到一行，每跳立即通过 ``on_hop`` 回调（工作线程调用，UI 侧用
+Qt 信号桥接），时间轴逐跳点亮；``should_cancel`` 生效时 SIGTERM 掉进程，
+已收到的跳保留在最终报告里。
 """
 
 from __future__ import annotations
@@ -34,7 +40,7 @@ from netops.platform_.os_layer import (
     CommandError,
     TracerouteHop,
     TracerouteResult,
-    run_traceroute,
+    run_traceroute_stream,
 )
 from netops.services.devices import DeviceBook
 
@@ -58,6 +64,7 @@ __all__ = [
     "resolve_tcp_port",
     "annotate_report",
     "TracerouteSession",
+    "run_traceroute_stream",
 ]
 
 _log = logging.getLogger(__name__)
@@ -304,9 +311,11 @@ def _fold(raw: Iterable[TracerouteHop]) -> tuple[HopInfo, ...]:
 
 
 class TracerouteSession:
-    """一次路由追踪：调用 ``run_traceroute``。
+    """一次路由追踪：调用 ``run_traceroute_stream`` 逐跳流式执行。
 
     ``run()`` 是阻塞调用，交给 ``TaskRunner.submit()`` 执行；会话本身不依赖 Qt。
+    ``on_hop`` 在工作线程里被调用（每跳到达立即触发一次），UI 侧必须用
+    Qt 信号桥接回主线程，时间轴才能逐跳点亮。
 
     **不在工作线程里读设备备注**：``Database`` 是单连接（``sqlite3`` 默认
     ``check_same_thread=True``），从 ``TaskRunner`` 的工作线程去查会直接抛
@@ -323,7 +332,8 @@ class TracerouteSession:
         process_timeout_s: float = 60.0,
         probe: str = DEFAULT_PROBE,
         tcp_port: int = DEFAULT_TCP_PORT,
-        runner: Callable[..., TracerouteResult] = run_traceroute,
+        runner: Callable[..., TracerouteResult] = run_traceroute_stream,
+        on_hop: Callable[[HopInfo], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], datetime] = datetime.now,
@@ -335,13 +345,17 @@ class TracerouteSession:
         self.probe = resolve_probe(probe)
         self.tcp_port = resolve_tcp_port(tcp_port)
         self._runner = runner
+        self._on_hop = on_hop or (lambda _hop: None)
         self._should_cancel = should_cancel or (lambda: False)
         self._clock = clock
         self._wall_clock = wall_clock
 
     # -- 对外 ---------------------------------------------------------------
     def run(self) -> TracerouteReport:
-        """阻塞执行追踪；``should_cancel`` 生效时返回空路径的报告。"""
+        """阻塞执行追踪；每跳到达回调 ``on_hop``，``should_cancel`` 生效时提前结束。
+
+        取消时进程被 SIGTERM 掉，已收到的跳保留在报告里，``cancelled=True``。
+        """
         started_at = self._wall_clock()
         t0 = self._clock()
         cancelled = self._should_cancel()
@@ -358,6 +372,8 @@ class TracerouteSession:
                     process_timeout_s=self._process_timeout,
                     probe=self.probe,
                     tcp_port=self.tcp_port,
+                    on_hop=self._emit_hop,
+                    should_cancel=self._should_cancel,
                 )
             except CommandError as exc:
                 detail = f"\n命令输出：{exc.output.strip()[-1000:]}" if exc.output.strip() else ""
@@ -379,6 +395,18 @@ class TracerouteSession:
             finished_at=self._wall_clock(),
             duration_s=max(self._clock() - t0, 0.0),
             cancelled=cancelled,
+        )
+
+    # -- 内部 ---------------------------------------------------------------
+    def _emit_hop(self, hop: TracerouteHop) -> None:
+        """把 os_layer 的 ``TracerouteHop`` 包装成 ``HopInfo`` 交给 UI 回调。"""
+        self._on_hop(
+            HopInfo(
+                hop=hop.hop,
+                address=hop.address,
+                rtt_ms=hop.rtt_ms,
+                timed_out=hop.timed_out,
+            )
         )
 
 

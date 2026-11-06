@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,6 +64,8 @@ __all__ = [
     "display_font_family",
     "run_ping",
     "run_traceroute",
+    "run_traceroute_stream",
+    "parse_traceroute_hop_line",
     "read_arp_table",
 ]
 
@@ -319,30 +323,42 @@ def run_ping(
 
 _HOP_LINE = re.compile(r"^\s*(\d+)\s+(.*)$")
 _STAR = "*"
+#: 单行里的 IPv4 地址（处理「域名 (IP)」和「IP」两种形态）。
+_HOP_ADDR = re.compile(r"([0-9]{1,3}(?:\.[0-9]{1,3}){3})")
+#: 单行里的延迟数值（``12.345 ms`` / ``12 ms``）。
+_HOP_RTT = re.compile(r"(\d+(?:\.\d+)?)\s*ms")
+
+
+def parse_traceroute_hop_line(line: str) -> TracerouteHop | None:
+    """解析 traceroute / tracert 的单行输出。
+
+    兼容三种形态：`` 1  10.0.0.1  12.3 ms``、`` 2  *``、`` 3  * * *``，
+    以及带主机名的 `` 1  gw (10.0.0.1)  12 ms``。不匹配返回 ``None``。
+    """
+    match = _HOP_LINE.match(line)
+    if not match:
+        return None
+    hop_no = int(match.group(1))
+    rest = match.group(2).strip()
+    if rest.startswith(_STAR):
+        return TracerouteHop(hop=hop_no, address="*", rtt_ms=None, timed_out=True)
+    address = _HOP_ADDR.search(rest)
+    if not address:
+        return None
+    rtts = [float(value) for value in _HOP_RTT.findall(rest)]
+    return TracerouteHop(
+        hop=hop_no,
+        address=address.group(1),
+        rtt_ms=rtts[0] if rtts else None,
+    )
 
 
 def parse_traceroute_output(target: str, output: str) -> TracerouteResult:
     hops: list[TracerouteHop] = []
     for line in output.splitlines():
-        match = _HOP_LINE.match(line)
-        if not match:
-            continue
-        hop_no = int(match.group(1))
-        rest = match.group(2).strip()
-        if rest.startswith(_STAR):
-            hops.append(TracerouteHop(hop=hop_no, address="*", rtt_ms=None, timed_out=True))
-            continue
-        parts = rest.split()
-        if not parts:
-            continue
-        rtts = [float(p) for p in re.findall(r"(\d+\.\d+)\s*ms", rest)]
-        hops.append(
-            TracerouteHop(
-                hop=hop_no,
-                address=parts[0],
-                rtt_ms=rtts[0] if rtts else None,
-            )
-        )
+        hop = parse_traceroute_hop_line(line)
+        if hop is not None:
+            hops.append(hop)
     reached = bool(hops) and not hops[-1].timed_out
     return TracerouteResult(target=target, hops=tuple(hops), reached=reached, raw=output)
 
@@ -412,6 +428,82 @@ def run_traceroute(
             output=output,
         )
     return result
+
+
+def run_traceroute_stream(
+    target: str,
+    *,
+    max_hops: int = DEFAULT_TRACEROUTE_MAX_HOPS,
+    timeout_s: float = 2.0,
+    process_timeout_s: float = 60.0,
+    probe: str = DEFAULT_TRACEROUTE_PROBE,
+    tcp_port: int = DEFAULT_TRACEROUTE_TCP_PORT,
+    on_hop: Callable[[TracerouteHop], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> TracerouteResult:
+    """流式 traceroute：每跳一到达就回调 ``on_hop``，不等进程结束。
+
+    用 ``subprocess.Popen`` + 逐行 ``readline``（traceroute 的 stdout 是无缓冲的
+    行式输出，每跳 2s 实时出一行），``on_hop`` 在工作线程被调用，UI 侧必须
+    用信号桥接回主线程。``should_cancel()`` 生效时 SIGTERM 掉进程，
+    已收到的跳保留在返回结果里。Windows 用 ``tracert``，同样是行式输出。
+    """
+    if not target.strip():
+        raise CommandError("目标地址不能为空")
+    if not 1 <= max_hops <= MAX_TRACEROUTE_HOPS:
+        raise CommandError(f"最大跳数必须在 1-{MAX_TRACEROUTE_HOPS} 之间")
+    if not 0.1 <= timeout_s <= 5.0:
+        raise CommandError("单跳等待时间必须在 0.1-5 秒之间")
+    check = should_cancel or (lambda: False)
+    emit = on_hop or (lambda _hop: None)
+
+    argv = _traceroute_argv(target.strip(), max_hops, timeout_s, probe, tcp_port)
+    deadline = time.monotonic() + process_timeout_s
+    hops: list[TracerouteHop] = []
+    lines: list[str] = []
+    try:
+        process = subprocess.Popen(
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except FileNotFoundError as exc:
+        raise CommandError(f"系统命令不存在：{argv[0]}") from exc
+
+    cancelled = False
+    try:
+        for line in process.stdout:  # type: ignore[union-attr]
+            lines.append(line)
+            hop = parse_traceroute_hop_line(line)
+            if hop is not None:
+                hops.append(hop)
+                emit(hop)
+            if check():
+                cancelled = True
+                break
+            if time.monotonic() > deadline:
+                cancelled = True
+                break
+    finally:
+        if cancelled and process.poll() is None:
+            process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:  # pragma: no cover - 兜底
+            process.kill()
+            process.wait(timeout=2)
+        if process.stdout is not None:  # type: ignore[union-attr]
+            process.stdout.close()
+
+    raw = "".join(lines)
+    resolved = target.strip()
+    header = re.match(r"traceroute to (\S+)", raw)
+    if header:
+        resolved = header.group(1)
+    reached = bool(hops) and not hops[-1].timed_out
+    return TracerouteResult(target=resolved, hops=tuple(hops), reached=reached, raw=raw)
 
 
 _ARP_MACOS = re.compile(

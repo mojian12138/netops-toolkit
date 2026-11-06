@@ -61,6 +61,10 @@ class FakeRunner:
 
     def __call__(self, target: str, **kwargs) -> TracerouteResult:
         self.calls.append((target, kwargs))
+        on_hop = kwargs.get("on_hop")
+        if on_hop is not None and not isinstance(self._result, Exception):
+            for hop in self._result.hops:
+                on_hop(hop)
         if isinstance(self._result, Exception):
             raise self._result
         return self._result
@@ -174,6 +178,47 @@ def test_all_timeout_hint_mentions_probe_switch(page: TraceroutePage) -> None:
 
     assert "切换探测方式" in page.status_text()
     assert "探测：ICMP" in page.status_text()
+
+
+def test_hop_bridge_crosses_thread_boundary(page: TraceroutePage) -> None:
+    """后台线程 emit 的每一跳要经 Qt 信号桥接，在主线程落成表格行 + 时间轴节点。"""
+    runner = FakeRunner(_result([(1, "10.0.0.1", 1.0), (2, "*", None), (3, "8.8.8.8", 9.5)]))
+    page.runner_factory = runner
+    page.set_target("8.8.8.8")
+    page.start()
+    page.run_blocking()
+
+    # 每一跳都进了表格（即使没有 report 也不丢行）
+    rows = page.table_rows()
+    assert len(rows) == 3
+    assert rows[0][1] == "10.0.0.1"
+    assert rows[1][1] == "*"
+    assert rows[2][1] == "8.8.8.8"
+    # timeline 逐节点累计
+    assert page.timeline.hop_count() == 3
+
+
+def test_streaming_rows_appear_before_finish(page: TraceroutePage) -> None:
+    """跨线程的 on_hop 信号在主线程事件循环里被处理，一跳一行。"""
+
+    class StreamingRunner:
+        def __call__(self, target: str, **kwargs) -> TracerouteResult:
+            on_hop = kwargs["on_hop"]
+            for no, addr, rtt in [(1, "10.0.0.1", 1.0), (2, "10.0.0.2", 5.0)]:
+                on_hop(TracerouteHop(hop=no, address=addr, rtt_ms=rtt, timed_out=False))
+            hops = (
+                TracerouteHop(hop=1, address="10.0.0.1", rtt_ms=1.0),
+                TracerouteHop(hop=2, address="10.0.0.2", rtt_ms=5.0),
+            )
+            return TracerouteResult(target=target, hops=hops, reached=True)
+
+    page.runner_factory = StreamingRunner()
+    page.set_target("8.8.8.8")
+    page.start()
+    page.run_blocking()
+    assert page.state() == "finished"
+    assert len(page.table_rows()) == 2
+    assert page.timeline.hop_count() == 2
 
 
 def test_command_error_shows_inline(page: TraceroutePage) -> None:
