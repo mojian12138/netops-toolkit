@@ -127,7 +127,33 @@ def test_session_passes_parameters_to_runner() -> None:
     assert kwargs["max_hops"] == 12
     assert kwargs["timeout_s"] == pytest.approx(3.0)
     assert kwargs["process_timeout_s"] == 45.0
-    assert kwargs["probe"] == "udp"
+    assert kwargs["probe"] == "icmp"
+    assert kwargs["tcp_port"] == tr.DEFAULT_TCP_PORT
+
+
+def test_session_probe_and_tcp_port_validation() -> None:
+    runner = FakeRunner(_result("8.8.8.8", [(1, "10.0.0.1", 1.0)]))
+
+    session = TracerouteSession("8.8.8.8", probe="TCP", tcp_port=8443, runner=runner)
+    assert session.probe == "tcp"
+    assert session.tcp_port == 8443
+    session.run()
+    assert runner.calls[0][1]["probe"] == "tcp"
+    assert runner.calls[0][1]["tcp_port"] == 8443
+
+    with pytest.raises(TracerouteError, match="探测方式"):
+        TracerouteSession("8.8.8.8", probe="gre", runner=runner)
+    with pytest.raises(TracerouteError, match="TCP 端口"):
+        TracerouteSession("8.8.8.8", probe="tcp", tcp_port=0, runner=runner)
+    with pytest.raises(TracerouteError, match="TCP 端口"):
+        TracerouteSession("8.8.8.8", probe="tcp", tcp_port=70000, runner=runner)
+
+
+def test_report_records_probe() -> None:
+    runner = FakeRunner(_result("8.8.8.8", [(1, "10.0.0.1", 1.0)]))
+    report = TracerouteSession("8.8.8.8", probe="udp", runner=runner).run()
+    assert report.probe == "udp"
+    assert "探测方式：UDP" in report.to_markdown()
 
 
 def test_report_fields_and_reached() -> None:
@@ -289,3 +315,5 @@ def test_module_constants_match_os_layer() -> None:
 
     assert tr.MAX_HOPS == os_layer.MAX_TRACEROUTE_HOPS
     assert tr.DEFAULT_HOPS == os_layer.DEFAULT_TRACEROUTE_MAX_HOPS
+    assert tr.PROBES == os_layer.TRACEROUTE_PROBES
+    assert tr.DEFAULT_PROBE == os_layer.DEFAULT_TRACEROUTE_PROBE == "icmp"

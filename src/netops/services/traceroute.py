@@ -27,7 +27,10 @@ from datetime import datetime
 
 from netops.platform_.os_layer import (
     DEFAULT_TRACEROUTE_MAX_HOPS,
+    DEFAULT_TRACEROUTE_PROBE,
+    DEFAULT_TRACEROUTE_TCP_PORT,
     MAX_TRACEROUTE_HOPS,
+    TRACEROUTE_PROBES,
     CommandError,
     TracerouteHop,
     TracerouteResult,
@@ -41,11 +44,18 @@ __all__ = [
     "TIMEOUT_PRESETS",
     "DEFAULT_TIMEOUT_S",
     "MAX_TIMEOUT_S",
+    "PROBES",
+    "PROBE_LABELS",
+    "DEFAULT_PROBE",
+    "DEFAULT_TCP_PORT",
     "TracerouteError",
     "HopInfo",
     "TracerouteReport",
     "parse_target",
     "resolve_max_hops",
+    "resolve_timeout",
+    "resolve_probe",
+    "resolve_tcp_port",
     "annotate_report",
     "TracerouteSession",
 ]
@@ -60,6 +70,17 @@ MAX_TIMEOUT_S = 5.0
 DEFAULT_TIMEOUT_S = 2.0
 #: 下拉可选的超时档位（秒）。
 TIMEOUT_PRESETS = (1.0, 2.0, 3.0, 5.0)
+
+#: 探测方式与 UI 下拉标签（顺序一致）。ICMP 兼容性最好——UDP 高端口探针
+#: 普遍被沿途防火墙静默丢弃，路径全是 ``*``；TCP 能穿透只放行特定端口的网络。
+PROBES = TRACEROUTE_PROBES
+PROBE_LABELS = {
+    "icmp": "ICMP（推荐，兼容性最好）",
+    "udp": "UDP（默认系统行为，部分网络全超时）",
+    "tcp": "TCP（指定端口，可穿过仅放行 Web 的防火墙）",
+}
+DEFAULT_PROBE = DEFAULT_TRACEROUTE_PROBE
+DEFAULT_TCP_PORT = DEFAULT_TRACEROUTE_TCP_PORT
 
 #: 主机名只允许字母数字与 ``.-_``，避免拼进 argv 时出现奇怪字符。
 _HOSTNAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,251}[A-Za-z0-9])?$")
@@ -112,6 +133,7 @@ class TracerouteReport:
     reached: bool
     max_hops: int
     timeout_s: float
+    probe: str
     started_at: datetime
     finished_at: datetime
     duration_s: float
@@ -155,6 +177,7 @@ class TracerouteReport:
             f"- 追踪结束：{self.finished_at:%Y-%m-%d %H:%M:%S}",
             f"- 追踪时长：{self.duration_s:.1f} 秒",
             f"- 最大跳数：{self.max_hops}，单探针等待 {self.timeout_s:.1f} 秒",
+            f"- 探测方式：{self.probe.upper()}",
             f"- 结果：{self.hop_count} 跳，"
             + ("已到达目标" if self.reached else "未确认到达目标")
             + ("（已手动停止）" if self.cancelled else ""),
@@ -223,6 +246,26 @@ def resolve_timeout(value: float) -> float:
     return float(value)
 
 
+def resolve_probe(value: str) -> str:
+    """校验探测方式，返回规范化的小写值。"""
+    probe = (value or "").strip().lower()
+    if probe not in PROBES:
+        allowed = " / ".join(PROBES)
+        raise TracerouteError(f"探测方式必须是 {allowed} 之一，当前：{value!r}")
+    return probe
+
+
+def resolve_tcp_port(value: int) -> int:
+    """校验 TCP 探测端口。"""
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        raise TracerouteError(f"TCP 端口必须是整数，当前：{value!r}") from None
+    if not 1 <= port <= 65535:
+        raise TracerouteError("TCP 端口必须在 1-65535 之间")
+    return port
+
+
 # ---------------------------------------------------------------------------
 # 会话
 # ---------------------------------------------------------------------------
@@ -278,7 +321,8 @@ class TracerouteSession:
         max_hops: int = DEFAULT_HOPS,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         process_timeout_s: float = 60.0,
-        probe: str = "udp",
+        probe: str = DEFAULT_PROBE,
+        tcp_port: int = DEFAULT_TCP_PORT,
         runner: Callable[..., TracerouteResult] = run_traceroute,
         should_cancel: Callable[[], bool] | None = None,
         clock: Callable[[], float] = time.monotonic,
@@ -288,7 +332,8 @@ class TracerouteSession:
         self.max_hops = resolve_max_hops(max_hops)
         self.timeout_s = resolve_timeout(timeout_s)
         self._process_timeout = process_timeout_s
-        self.probe = probe
+        self.probe = resolve_probe(probe)
+        self.tcp_port = resolve_tcp_port(tcp_port)
         self._runner = runner
         self._should_cancel = should_cancel or (lambda: False)
         self._clock = clock
@@ -312,6 +357,7 @@ class TracerouteSession:
                     timeout_s=self.timeout_s,
                     process_timeout_s=self._process_timeout,
                     probe=self.probe,
+                    tcp_port=self.tcp_port,
                 )
             except CommandError as exc:
                 detail = f"\n命令输出：{exc.output.strip()[-1000:]}" if exc.output.strip() else ""
@@ -328,6 +374,7 @@ class TracerouteSession:
             reached=reached,
             max_hops=self.max_hops,
             timeout_s=self.timeout_s,
+            probe=self.probe,
             started_at=started_at,
             finished_at=self._wall_clock(),
             duration_s=max(self._clock() - t0, 0.0),
@@ -365,6 +412,7 @@ def annotate_report(report: TracerouteReport, book: DeviceBook) -> TracerouteRep
         reached=report.reached,
         max_hops=report.max_hops,
         timeout_s=report.timeout_s,
+        probe=report.probe,
         started_at=report.started_at,
         finished_at=report.finished_at,
         duration_s=report.duration_s,

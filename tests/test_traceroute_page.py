@@ -137,7 +137,43 @@ def test_trace_passes_parameters(page: TraceroutePage) -> None:
     assert target == "8.8.8.8"
     assert kwargs["max_hops"] == 12
     assert kwargs["timeout_s"] == pytest.approx(2.0)
-    assert kwargs["probe"] == "udp"
+    assert kwargs["probe"] == "icmp"
+    assert kwargs["tcp_port"] == 443
+
+
+def test_probe_switch_updates_port_row_and_params(page: TraceroutePage) -> None:
+    runner = FakeRunner(_result([(1, "10.0.0.1", 1.0)]))
+    page.runner_factory = runner
+    page.set_target("8.8.8.8")
+
+    # TCP 模式：端口行可见、端口值随 session 传入
+    page.set_probe("tcp")
+    page.tcp_port_spin.setValue(8443)
+    assert page.tcp_port_spin.isEnabled()
+    page.start()
+    page.run_blocking()
+    assert runner.calls[-1][1]["probe"] == "tcp"
+    assert runner.calls[-1][1]["tcp_port"] == 8443
+
+    # 切回 UDP：端口行隐藏
+    page.set_probe("udp")
+    assert not page._tcp_port_row.isVisibleTo(page)
+    page.start()
+    page.run_blocking()
+    assert runner.calls[-1][1]["probe"] == "udp"
+
+    with pytest.raises(Exception, match="探测方式"):
+        page.set_probe("gre")
+
+
+def test_all_timeout_hint_mentions_probe_switch(page: TraceroutePage) -> None:
+    page.runner_factory = FakeRunner(_result([(1, "*", None), (2, "*", None)]))
+    page.set_target("8.8.8.8")
+    page.start()
+    page.run_blocking()
+
+    assert "切换探测方式" in page.status_text()
+    assert "探测：ICMP" in page.status_text()
 
 
 def test_command_error_shows_inline(page: TraceroutePage) -> None:

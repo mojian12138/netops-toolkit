@@ -121,3 +121,17 @@ def test_traceroute_argv_shape() -> None:
         icmp_argv = _traceroute_argv("1.1.1.1", 20, 3.0, "icmp")
         assert "-I" in icmp_argv
         assert icmp_argv[icmp_argv.index("-w") + 1] == "3"
+        tcp_argv = _traceroute_argv("1.1.1.1", 20, 2.0, "tcp", 8443)
+        assert tcp_argv[tcp_argv.index("-P") + 1] == "tcp"
+        assert tcp_argv[tcp_argv.index("-p") + 1] == "8443"
+
+
+def test_traceroute_argv_rejects_unknown_probe_and_bad_port() -> None:
+    import pytest
+
+    from netops.platform_.os_layer import CommandError
+
+    with pytest.raises(CommandError, match="探测协议"):
+        _traceroute_argv("1.1.1.1", 20, 2.0, "gre")
+    with pytest.raises(CommandError, match="TCP 端口"):
+        _traceroute_argv("1.1.1.1", 20, 2.0, "tcp", 0)

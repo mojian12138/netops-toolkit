@@ -58,6 +58,9 @@ _TIMEOUT_COLOR = "#dc2626"
 #: 超时档位与 ``tr_service.TIMEOUT_PRESETS`` 顺序一致。
 _TIMEOUT_LABELS = ["1 秒", "2 秒", "3 秒", "5 秒"]
 
+#: 探测方式下拉项，顺序与 ``tr_service.PROBES`` 一致。
+_PROBE_LABELS = [tr_service.PROBE_LABELS[key] for key in tr_service.PROBES]
+
 #: 进程超时：比「最大跳数 × 单探针等待」再留一点余量，防止卡死。
 _PROCESS_TIMEOUT_BASE_S = 15.0
 
@@ -114,6 +117,25 @@ class TraceroutePage(ToolPage):
         self.timeout_combo = make_combo(_TIMEOUT_LABELS)
         self.timeout_combo.setCurrentIndex(1 if tr_service.DEFAULT_TIMEOUT_S == 2.0 else 0)
         grid.addWidget(FieldRow("单跳等待", self.timeout_combo, label_width=64), 0, 1)
+
+        self.probe_combo = make_combo(_PROBE_LABELS)
+        self.probe_combo.setToolTip(
+            "ICMP：兼容性最好，运营商网络也普遍放行；\n"
+            "UDP：系统 traceroute 默认行为，高端口探针常被防火墙丢弃（路径全是 *）；\n"
+            "TCP：探测指定端口（默认 443），适合只放行 Web 流量的网络。"
+        )
+        grid.addWidget(FieldRow("探测方式", self.probe_combo, label_width=64), 1, 0)
+
+        self.tcp_port_spin = QSpinBox()
+        self.tcp_port_spin.setObjectName("ToolInput")
+        self.tcp_port_spin.setRange(1, 65535)
+        self.tcp_port_spin.setValue(tr_service.DEFAULT_TCP_PORT)
+        self.tcp_port_spin.setToolTip("TCP 探测使用的目标端口；仅「探测方式 = TCP」时生效")
+        self._tcp_port_row = FieldRow("TCP 端口", self.tcp_port_spin, label_width=64)
+        grid.addWidget(self._tcp_port_row, 1, 1)
+        self.probe_combo.currentIndexChanged.connect(self._on_probe_changed)
+        self._on_probe_changed()
+
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         card.body.addLayout(grid)
@@ -202,8 +224,9 @@ class TraceroutePage(ToolPage):
         self.start_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
         self.clear_button.setEnabled(not running)
-        for widget in (self.target_input, self.hops_spin, self.timeout_combo):
+        for widget in (self.target_input, self.hops_spin, self.timeout_combo, self.probe_combo):
             widget.setEnabled(not running)
+        self.tcp_port_spin.setEnabled(not running and self._probe_value() == "tcp")
         self.export_md_button.setEnabled(self._report is not None)
         self.export_csv_button.setEnabled(self._report is not None)
         self.copy_path_button.setEnabled(self._report is not None)
@@ -216,13 +239,31 @@ class TraceroutePage(ToolPage):
         index = max(0, min(self.timeout_combo.currentIndex(), len(tr_service.TIMEOUT_PRESETS) - 1))
         return tr_service.TIMEOUT_PRESETS[index]
 
+    def _probe_value(self) -> str:
+        index = max(0, min(self.probe_combo.currentIndex(), len(tr_service.PROBES) - 1))
+        return tr_service.PROBES[index]
+
+    def set_probe(self, value: str) -> None:
+        """切换探测方式（测试与外部调用）；非法值抛 ``TracerouteError``。"""
+        probe = tr_service.resolve_probe(value)
+        index = tr_service.PROBES.index(probe)
+        self.probe_combo.setCurrentIndex(index)
+
+    def _on_probe_changed(self) -> None:
+        self._tcp_port_row.setVisible(self._probe_value() == "tcp")
+        if self._state != "running":
+            self.tcp_port_spin.setEnabled(self._probe_value() == "tcp")
+
     def _build_session(self) -> tr_service.TracerouteSession:
         hops = self.hops_spin.value()
         timeout = self._timeout_value()
+        probe = self._probe_value()
         return tr_service.TracerouteSession(
             self.target_input.text(),
             max_hops=hops,
             timeout_s=timeout,
+            probe=probe,
+            tcp_port=self.tcp_port_spin.value(),
             # Reserve enough time for all hop probes plus command startup/cleanup.
             process_timeout_s=max(_PROCESS_TIMEOUT_BASE_S, hops * timeout * 1.5),
             runner=self.runner_factory,
@@ -304,8 +345,11 @@ class TraceroutePage(ToolPage):
         self._set_state("finished")
         tail = "（已停止）" if report.cancelled else ""
         verdict = "已到达目标" if report.reached else "未确认到达目标"
+        if report.hop_count and report.hop_count == len(report.timeouts):
+            verdict += "；全部超时通常是探测包被防火墙过滤，试试切换探测方式（如 ICMP）"
         self.status.setText(
             f"追踪结束{tail}：{report.hop_count} 跳，{verdict}，耗时 {report.duration_s:.1f} 秒"
+            f"（探测：{report.probe.upper()}）"
         )
 
     def _on_failed(self, message: str) -> None:

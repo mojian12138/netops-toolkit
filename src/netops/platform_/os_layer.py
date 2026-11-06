@@ -30,6 +30,10 @@ DEFAULT_PING_PACKET_SIZE = 56
 MAX_PING_COUNT = 1000
 DEFAULT_TRACEROUTE_MAX_HOPS = 20
 MAX_TRACEROUTE_HOPS = 30
+#: traceroute 支持的探测协议；默认 ICMP——UDP 高端口普遍被沿途防火墙过滤成全 ``*``。
+TRACEROUTE_PROBES = ("icmp", "udp", "tcp")
+DEFAULT_TRACEROUTE_PROBE = "icmp"
+DEFAULT_TRACEROUTE_TCP_PORT = 443
 
 __all__ = [
     "APP_NAME",
@@ -42,6 +46,9 @@ __all__ = [
     "MAX_PING_COUNT",
     "DEFAULT_TRACEROUTE_MAX_HOPS",
     "MAX_TRACEROUTE_HOPS",
+    "TRACEROUTE_PROBES",
+    "DEFAULT_TRACEROUTE_PROBE",
+    "DEFAULT_TRACEROUTE_TCP_PORT",
     "CommandError",
     "PingReply",
     "PingResult",
@@ -340,14 +347,31 @@ def parse_traceroute_output(target: str, output: str) -> TracerouteResult:
     return TracerouteResult(target=target, hops=tuple(hops), reached=reached, raw=output)
 
 
-def _traceroute_argv(target: str, max_hops: int, timeout_s: float, probe: str = "udp") -> list[str]:
-    if probe not in {"udp", "icmp"}:
-        raise CommandError("探测协议仅支持 UDP 或 ICMP")
+def _traceroute_argv(
+    target: str,
+    max_hops: int,
+    timeout_s: float,
+    probe: str = DEFAULT_TRACEROUTE_PROBE,
+    tcp_port: int = DEFAULT_TRACEROUTE_TCP_PORT,
+) -> list[str]:
+    """构造 traceroute 命令。探测协议差异只在这里出现。
+
+    - macOS：``-I``=ICMP、默认=UDP 高端口、``-P tcp`` 走 pcap（本机实测
+      ``pcap_activate() failed``，见 ``run_traceroute`` 的降级逻辑）；
+    - Windows ``tracert`` 只有 ICMP，忽略 probe。
+    """
+    if probe not in TRACEROUTE_PROBES:
+        raise CommandError("探测协议仅支持 ICMP、UDP 或 TCP")
+    if not 1 <= tcp_port <= 65535:
+        raise CommandError("TCP 端口必须在 1-65535 之间")
     if is_windows():
         return ["tracert", "-d", "-h", str(max_hops), "-w", str(int(timeout_s * 1000)), target]
     argv = [TRACEROUTE_BIN, "-n", "-m", str(max_hops), "-q", "1", "-w", f"{timeout_s:g}"]
     if probe == "icmp":
         argv.append("-I")
+    elif probe == "tcp":
+        # macOS 的 traceroute 需要 -P tcp + -p 端口；-T 是 Linux 变体写法。
+        argv += ["-P", "tcp", "-p", str(tcp_port)]
     return [*argv, target]
 
 
@@ -357,7 +381,8 @@ def run_traceroute(
     max_hops: int = DEFAULT_TRACEROUTE_MAX_HOPS,
     timeout_s: float = 2.0,
     process_timeout_s: float = 60.0,
-    probe: str = "udp",
+    probe: str = DEFAULT_TRACEROUTE_PROBE,
+    tcp_port: int = DEFAULT_TRACEROUTE_TCP_PORT,
 ) -> TracerouteResult:
     if not target.strip():
         raise CommandError("目标地址不能为空")
@@ -365,8 +390,16 @@ def run_traceroute(
         raise CommandError(f"最大跳数必须在 1-{MAX_TRACEROUTE_HOPS} 之间")
     if not 0.1 <= timeout_s <= 5.0:
         raise CommandError("单跳等待时间必须在 0.1-5 秒之间")
-    argv = _traceroute_argv(target.strip(), max_hops, timeout_s, probe)
+    argv = _traceroute_argv(target.strip(), max_hops, timeout_s, probe, tcp_port)
     returncode, output = _run(argv, process_timeout_s)
+    # macOS 的 TCP 探测依赖 pcap，部分机器上初始化失败（pcap_activate 报错、退出码 71）。
+    # 这不是用户能解决的，自动降级成 ICMP 再跑一次，错误消息里带上原因。
+    if returncode != 0 and probe == "tcp" and "pcap" in output.lower():
+        fallback = _traceroute_argv(
+            target.strip(), max_hops, timeout_s, "icmp", DEFAULT_TRACEROUTE_TCP_PORT
+        )
+        returncode, output = _run(fallback, process_timeout_s)
+        probe = "icmp"
     if returncode != 0 and not output.strip():
         raise CommandError(f"traceroute 退出码为 {returncode}，没有返回诊断信息")
     result = parse_traceroute_output(target.strip(), output)
