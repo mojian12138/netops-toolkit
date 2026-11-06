@@ -26,6 +26,11 @@ config/*.local.yaml
 *.pem
 *.key
 
+# ---- 本地测试参考资料（不入库）----
+ping-result.csv
+tests/h3c/
+tests/tracert-master/
+
 # ---- macOS ----
 .DS_Store
 ._*
