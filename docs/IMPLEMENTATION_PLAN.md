@@ -211,8 +211,8 @@ src/netops/
 
 | 步骤 | 内容 | 验收 |
 |---|---|---|
-| J1 | `services/warranty.py`：httpx 异步查询、全局限流、结果缓存 | 单测：mock 响应解析；接口失败明确报错，不臆造 |
-| J2 | `ui/pages/warranty_page.py`：多行 SN 输入、逐行进度、结果表、临期/过保高亮、导出 CSV | 手动：批量查询与导出 |
+| J1 | `services/warranty.py`：httpx 异步查询、全局限流、结果缓存 | ✅ 2026-11-06：es.h3c.com entitlement 适配（HAR 抓包）、串行 + 可调间隔限流、429 验证码熔断不绕过；MockTransport 单测覆盖成功/多产品/e607/429/取消/限流上限；结果缓存移入后续 roadmap |
+| J2 | `ui/pages/warranty_page.py`：多行 SN 输入、逐行进度、结果表、临期/过保高亮、导出 CSV | ✅ 2026-11-06：单条/批量查询、间隔可调（默认 500ms）、验证码横幅一键打开官方页 + 重试失败项、临期/过保着色、保修/合同明细、CSV 导出；页面测试 15 项 + 冒烟全绿 |
 
 > 若官方接口需要登录/验证码，J1 先交付「接口适配层 + 明确不可用提示」，不伪造数据。
 
@@ -233,6 +233,13 @@ src/netops/
 ---
 
 ## 5. 进度日志
+
+### 2026-11-06 · J1 + J2 完成（H3C 维保查询）
+
+- 变更：新增 `services/warranty.py`（es.h3c.com entitlement 接口适配、串行限速、429 验证码熔断）、`ui/pages/warranty_page.py`（单条/批量查询、验证码横幅 + 打开官方页 + 重试失败项、临期/过保高亮、保修/合同明细、CSV 导出）；`tools/h3c.py` WarrantyTool 转真实页面；QSS 新增 `#WarnNotice`
+- 验证：ruff check ✅ / ruff format --check ✅ / pytest 535 passed ✅（含服务层 35 项 + 页面 20 项新测试；高亮用例已改用相对日期，不再随日期失效）
+- 遗留：结果缓存未做（roadmap）、Markdown 导出未做、type=1 多产品需手动带 PN 重查；CLI 脚本 `tests/h3c/h3c_warranty_query.py` 保留作调试
+- 下一步：P1 监控最小闭环
 
 ### 2026-11-06 · 聚合上行配置顺序与默认 Trunk
 

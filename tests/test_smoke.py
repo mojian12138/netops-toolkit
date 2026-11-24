@@ -60,6 +60,7 @@ IMPLEMENTED_TOOL_IDS: set[str] = {
     "diag.traceroute",
     "h3c.ap",
     "h3c.scripts",
+    "h3c.warranty",
 }
 
 
